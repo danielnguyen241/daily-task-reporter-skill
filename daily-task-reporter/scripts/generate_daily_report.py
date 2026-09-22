@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Daily Task Reporter CLI & Automation Script
-Automatically extracts, filters, and synchronizes daily work logs from Codex and Antigravity
-to the company master Google Sheet via Google Apps Script Web App.
+Supports:
+1. Codex & Antigravity SQLite/JSONL local logs
+2. ChatGPT Web JSON export files (for Content/Marketing team like Thảo)
+3. Direct 1-click sync to HiAgency Google Sheet via Google Apps Script Web App
 """
 
 import os
@@ -16,7 +18,7 @@ import subprocess
 import getpass
 import urllib.request
 
-# Master Google Apps Script Web App Endpoint (Pre-authenticated, 0-friction)
+# Master Google Apps Script Web App Endpoint
 WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzZr2gghKYzZ7MhcYuKJloHIPBjbucSKZqhbPOc1Qb7DvgZjlfZogFFPaoo3OWs8hFkDg/exec"
 
 # Master Whitelists
@@ -31,11 +33,11 @@ WHITELIST_CLIENTS = [
 ]
 
 WHITELIST_CATEGORIES = [
+    "Content Creation",
     "SEO",
-    "Paid Ads",
     "Social Media",
     "Email Marketing",
-    "Content Creation",
+    "Paid Ads",
     "Reporting/Analytics",
     "Client/Team Meetings",
     "Admin/Ops",
@@ -53,47 +55,18 @@ WHITELIST_GROWTH_DRIVERS = [
     "Unclear / Not sure"
 ]
 
-# Strict blacklist to eliminate personal, training, scraper, or user-excluded tasks
 BLACKLIST_PATTERNS = [
-    "vanguard",
-    "game",
-    "whop",
-    "video",
-    "khóa học",
-    "phụ đề",
-    "báo cáo chiến dịch",
-    "chiến dịch.csv",
-    "nguyen hoang tan",
-    "cpa mục tiêu",
-    "giảm chi phí lại bên adword",
-    "campain local",
-    "72 lead",
-    "tỷ lệ table",
-    "copy qua",
-    "độ rộng cột",
-    "task report",
-    "tổng hợp task",
-    "sửa lại skill",
-    "bỏ cái",
-    "cấm từ ddây",
-    "m nói ít thôi",
-    "codex-clipboard",
-    "t k có vi phạm",
-    "quyền browser",
-    "file pdf á, để t gửi cho anh em",
-    "đánh giá thực tế",
-    "nhìn theo góc độ của m",
-    "tạo thumb feature image",
-    "featured image",
-    "chuẩn seo (webp"
+    "vanguard", "game", "whop", "video đó sẽ tính", "tự động tải",
+    "khóa học", "phụ đề", "báo cáo chiến dịch", "chiến dịch.csv",
+    "nguyen hoang tan", "cpa mục tiêu", "giảm chi phí lại bên adword",
+    "campain local", "72 lead", "tỷ lệ table", "độ rộng cột",
+    "task report", "tổng hợp task", "sửa lại skill", "bỏ cái",
+    "cấm từ ddây", "m nói ít thôi", "codex-clipboard"
 ]
 
 def is_blacklisted(text):
-    text_lower = text.lower()
-    for pattern in BLACKLIST_PATTERNS:
-        if pattern.lower() in text_lower:
-            return True
-    return False
+    lower = text.lower()
+    return any(p in lower for p in BLACKLIST_PATTERNS)
 
 def get_vietnam_now():
     return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
@@ -113,7 +86,6 @@ def get_day_bounds(date_str=None):
     return date_str, start_ms, end_ms, tz_vn
 
 def detect_user_name():
-    """Auto-detect user full name from git config or system account."""
     try:
         git_name = subprocess.check_output(['git', 'config', 'user.name'], text=True).strip()
         if git_name and git_name.lower() not in ['github actions', 'root']:
@@ -127,7 +99,9 @@ def detect_user_name():
         'datnguyen': 'Dat Nguyen',
         'jayden': 'Jayden',
         'tungvu': 'Tung Vu',
-        'lananh': 'Lan Anh'
+        'lananh': 'Lan Anh',
+        'thao': 'Thao',
+        'thaonguyen': 'Thao Nguyen'
     }
     return mapping.get(username, username.replace('_', ' ').title())
 
@@ -199,6 +173,117 @@ def collect_antigravity_events(date_str, tz_vn):
             pass
     return events
 
+def parse_chatgpt_file(file_path, date_str, author_name, role_name):
+    if not os.path.exists(file_path):
+        print(f"❌ Không tìm thấy file: {file_path}")
+        return []
+    
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"❌ Lỗi đọc file JSON: {e}")
+        return []
+    
+    items = data if isinstance(data, list) else [data]
+    tasks = []
+    standard_blocks = [
+        "09:00-10:30",
+        "10:30-12:00",
+        "13:30-15:30",
+        "15:30-17:30",
+        "17:30-18:30"
+    ]
+    
+    for idx, item in enumerate(items):
+        title = item.get("title", "")
+        # Extract user prompts
+        prompts = []
+        mapping = item.get("mapping", {})
+        for k, node in mapping.items():
+            msg = node.get("message", {})
+            if msg and msg.get("author", {}).get("role") == "user":
+                parts = msg.get("content", {}).get("parts", [])
+                for p in parts:
+                    if isinstance(p, str):
+                        prompts.append(p.strip())
+        
+        full_text = f"{title} {' '.join(prompts)}".strip()
+        if not full_text or is_blacklisted(full_text):
+            continue
+        
+        text_lower = full_text.lower()
+        
+        # Match Client
+        client = "Hiagency"
+        for cl in WHITELIST_CLIENTS:
+            if cl.lower() in text_lower:
+                client = cl
+                break
+        if client == "Hiagency":
+            if any(w in text_lower for w in ["vệ sinh", "giặt thảm", "lau dọn", "cleaning"]):
+                client = "everydayclean"
+            elif any(w in text_lower for w in ["tóc", "rụng tóc", "hair", "folli"]):
+                client = "Hairfolli"
+            elif any(w in text_lower for w in ["thẩm mỹ", "filler", "botox", "jaesthetic"]):
+                client = "Jaesthetic"
+            elif any(w in text_lower for w in ["nail", "móng", "biab"]):
+                client = "Biabnails"
+            elif any(w in text_lower for w in ["granny flat", "xây dựng"]):
+                client = "sydneygrannyflat"
+            elif any(w in text_lower for w in ["office clean", "văn phòng"]):
+                client = "sydneyofficeclean"
+        
+        # Match Category
+        category = "Content Creation"
+        if any(w in text_lower for w in ["seo", "từ khóa", "keyword", "cluster"]):
+            category = "SEO"
+        elif any(w in text_lower for w in ["facebook", "tiktok", "instagram", "reels", "social", "fanpage"]):
+            category = "Social Media"
+        elif any(w in text_lower for w in ["email", "newsletter"]):
+            category = "Email Marketing"
+        elif any(w in text_lower for w in ["ads", "quảng cáo", "campaign", "cpa"]):
+            category = "Paid Ads"
+        elif any(w in text_lower for w in ["báo cáo", "report", "analytics"]):
+            category = "Reporting/Analytics"
+        
+        # Match Growth Driver
+        driver = "Traffic Growth"
+        if category == "Social Media":
+            driver = "Brand Awareness"
+        elif category == "Email Marketing":
+            driver = "Retention / Engagement"
+        elif category == "Paid Ads":
+            driver = "Conversion / Sales"
+        
+        # Natural task description
+        clean_title = title if title else "Soạn thảo nội dung"
+        if category == "Content Creation":
+            desc = f"Nghiên cứu tài liệu và soạn thảo bài viết hoàn chỉnh: \"{clean_title}\" cho khách hàng {client}."
+        elif category == "Social Media":
+            desc = f"Sáng tạo kịch bản video và biên soạn các bài đăng Social Media: \"{clean_title}\" cho {client}."
+        elif category == "SEO":
+            desc = f"Nghiên cứu bộ từ khóa và xây dựng nội dung chuẩn SEO: \"{clean_title}\" cho {client}."
+        else:
+            desc = f"Triển khai công việc {category}: \"{clean_title}\" cho khách hàng {client}."
+            
+        hour_block = standard_blocks[idx % len(standard_blocks)]
+        tasks.append({
+            "date": date_str,
+            "week": "Week 1",
+            "name": author_name,
+            "role": role_name,
+            "hour_block": hour_block,
+            "task_desc": desc,
+            "category": category,
+            "client": client,
+            "growth_driver": driver,
+            "deep_work": 90,
+            "notes": "Đã hoàn thành bản thảo"
+        })
+        
+    return tasks
+
 def group_into_tasks(events, date_str, author_name, role_name):
     if not events:
         return []
@@ -217,11 +302,9 @@ def group_into_tasks(events, date_str, author_name, role_name):
         first_dt = ev_list[0]["dt"]
         all_text = " ".join([e["text"] for e in ev_list])
         
-        # Company hours strictly start >= 09:00
         start_hour = max(9, first_dt.hour)
         hour_block = f"{start_hour:02d}:00-{(start_hour + 1):02d}:00"
         
-        # Match Client
         client = "Hiagency"
         for cl in WHITELIST_CLIENTS:
             if cl.lower() in all_text.lower():
@@ -285,7 +368,7 @@ def push_to_sheets(tasks):
             t['notes']
         ])
     
-    payload = json.dumps({"rows": rows_to_send, "cleanFirstSheetTestRows": True}).encode("utf-8")
+    payload = json.dumps({"rows": rows_to_send, "cleanFirstSheetTestRows": False}).encode("utf-8")
     req = urllib.request.Request(WEBAPP_URL, data=payload, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req) as resp:
@@ -295,27 +378,33 @@ def push_to_sheets(tasks):
         return {"status": "error", "message": str(e)}
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate daily task report from Codex & Antigravity logs.")
-    parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD (defaults to today in VN time)")
-    parser.add_argument("--name", type=str, default=None, help="Author name (auto-detected if omitted)")
-    parser.add_argument("--role", type=str, default="SEO Specialist", help="Job role title")
-    parser.add_argument("--format", type=str, choices=["markdown", "tsv", "json"], default="markdown", help="Output format")
-    parser.add_argument("--push", action="store_true", help="Automatically push rows to Google Sheet via Web App")
+    parser = argparse.ArgumentParser(description="Generate daily task report from Codex & Antigravity logs or ChatGPT export.")
+    parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD")
+    parser.add_argument("--name", type=str, default=None, help="Author name")
+    parser.add_argument("--role", type=str, default=None, help="Job role title")
+    parser.add_argument("--chatgpt-file", type=str, default=None, help="Path to ChatGPT JSON export file")
+    parser.add_argument("--format", type=str, choices=["markdown", "tsv", "json"], default="markdown")
+    parser.add_argument("--push", action="store_true", help="Push rows to Google Sheet via Web App")
     args = parser.parse_args()
     
     date_str, start_ms, end_ms, tz_vn = get_day_bounds(args.date)
-    author_name = args.name if args.name else detect_user_name()
     
-    codex_events = collect_codex_events(start_ms, end_ms, tz_vn)
-    ag_events = collect_antigravity_events(date_str, tz_vn)
-    
-    all_events = codex_events + ag_events
-    tasks = group_into_tasks(all_events, date_str, author_name, args.role)
+    if args.chatgpt_file:
+        author_name = args.name if args.name else "Thao"
+        author_role = args.role if args.role else "Content Specialist"
+        tasks = parse_chatgpt_file(args.chatgpt_file, date_str, author_name, author_role)
+    else:
+        author_name = args.name if args.name else detect_user_name()
+        author_role = args.role if args.role else "SEO Specialist"
+        codex_events = collect_codex_events(start_ms, end_ms, tz_vn)
+        ag_events = collect_antigravity_events(date_str, tz_vn)
+        all_events = codex_events + ag_events
+        tasks = group_into_tasks(all_events, date_str, author_name, author_role)
     
     if args.push:
         if tasks:
             res = push_to_sheets(tasks)
-            print(f"✅ Đã tự động đẩy {len(tasks)} dòng lên Google Sheet! Kết quả: {res}")
+            print(f"✅ Đã tự động đẩy {len(tasks)} dòng của [{author_name}] lên Google Sheet! Kết quả: {res}")
         else:
             print("⚠️ Không có task hợp lệ nào để đẩy lên Google Sheet.")
     
