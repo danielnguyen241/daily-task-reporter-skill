@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>HiAgency Task Reporter</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-card">
+    <div class="popup-header">
+      <div class="header-icon">📊</div>
+      <div class="header-text">
+        <h3>HiAgency Reporter</h3>
+        <p>Tự động điền Task Log từ ChatGPT Web</p>
+      </div>
+    </div>
+
+    <div class="status-badge">
+      <span class="status-dot"></span>
+      <span>Kết nối Google Sheet: <b>Sẵn sàng</b></span>
+    </div>
+
+    <div class="form-section">
+      <div class="input-field">
+        <label>Tên của bạn:</label>
+        <input type="text" id="userName" placeholder="VD: Thảo, Jayden...">
+      </div>
+
+      <div class="input-field">
+        <label>Vị trí / Role:</label>
+        <input type="text" id="userRole" placeholder="VD: Content Specialist">
+      </div>
+
+      <button id="saveBtn" class="btn-save">💾 Lưu Cấu Hình</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="action-buttons">
+      <button id="openChatGptBtn" class="btn-primary">🤖 Mở ChatGPT & Báo Cáo</button>
+      <button id="openSheetBtn" class="btn-secondary">🔗 Mở Google Sheet</button>
+    </div>
+
+    <div class="footer-note">
+      Chỉ cần vào chatgpt.com và bấm nút <b>"Báo Cáo Task Hôm Nay"</b> góc dưới bên phải màn hình.
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
