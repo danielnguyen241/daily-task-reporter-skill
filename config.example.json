@@ -1,0 +1,40 @@
+{
+  "webapp_url": "https://script.google.com/macros/s/YOUR_APPS_SCRIPT_DEPLOYMENT_ID/exec",
+  "target_sheet_tab": "Daily Task Log",
+  "timezone_offset_hours": 7,
+  "work_hours": {
+    "start": "09:00",
+    "lunch_start": "12:00",
+    "lunch_end": "13:30",
+    "end": "17:30"
+  },
+  "clients": [
+    "Internal Ops",
+    "Client Alpha",
+    "Client Beta",
+    "Open Source",
+    "General Marketing"
+  ],
+  "categories": [
+    "Content Creation",
+    "SEO / AEO",
+    "Software Development",
+    "Social Media",
+    "Email Marketing",
+    "Paid Ads",
+    "Reporting / Analytics",
+    "Client / Team Meetings",
+    "Admin / Ops",
+    "Learning / Research",
+    "Other"
+  ],
+  "growth_drivers": [
+    "Traffic Growth",
+    "Conversion / Sales",
+    "Retention / Engagement",
+    "Brand Awareness",
+    "Skill Building",
+    "Internal Ops",
+    "General Delivery"
+  ]
+}

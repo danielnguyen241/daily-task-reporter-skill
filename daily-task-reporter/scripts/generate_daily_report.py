@@ -18,11 +18,10 @@ import subprocess
 import getpass
 import urllib.request
 
-# Master Google Apps Script Web App Endpoint
-WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzZr2gghKYzZ7MhcYuKJloHIPBjbucSKZqhbPOc1Qb7DvgZjlfZogFFPaoo3OWs8hFkDg/exec"
+# Master Defaults (can be customized via config.json or environment variables)
+DEFAULT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzZr2gghKYzZ7MhcYuKJloHIPBjbucSKZqhbPOc1Qb7DvgZjlfZogFFPaoo3OWs8hFkDg/exec"
 
-# Master Whitelists
-WHITELIST_CLIENTS = [
+DEFAULT_CLIENTS = [
     "Hiagency",
     "everydayclean",
     "Hairfolli",
@@ -32,7 +31,7 @@ WHITELIST_CLIENTS = [
     "sydneyofficeclean"
 ]
 
-WHITELIST_CATEGORIES = [
+DEFAULT_CATEGORIES = [
     "Content Creation",
     "SEO",
     "Social Media",
@@ -45,7 +44,7 @@ WHITELIST_CATEGORIES = [
     "Other"
 ]
 
-WHITELIST_GROWTH_DRIVERS = [
+DEFAULT_GROWTH_DRIVERS = [
     "Traffic Growth",
     "Conversion / Sales",
     "Retention / Engagement",
@@ -54,6 +53,54 @@ WHITELIST_GROWTH_DRIVERS = [
     "Internal Ops",
     "Unclear / Not sure"
 ]
+
+def load_config(custom_path=None):
+    """
+    Load configuration from:
+    1. custom_path if provided
+    2. ./config.json (current working directory)
+    3. config.json in script or repository root
+    4. ~/.config/daily-task-reporter/config.json
+    5. Fallback to defaults and environment variables
+    """
+    candidates = []
+    if custom_path:
+        candidates.append(custom_path)
+    candidates.append(os.path.join(os.getcwd(), "config.json"))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(script_dir, "config.json"))
+    candidates.append(os.path.join(script_dir, "..", "config.json"))
+    candidates.append(os.path.join(script_dir, "..", "..", "config.json"))
+    candidates.append(os.path.expanduser("~/.config/daily-task-reporter/config.json"))
+
+    cfg = {}
+    for c in candidates:
+        if os.path.exists(c):
+            try:
+                with open(c, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    break
+            except Exception:
+                pass
+
+    webapp_url = os.environ.get("DAILY_TASK_WEBAPP_URL") or cfg.get("webapp_url") or DEFAULT_WEBAPP_URL
+    clients = cfg.get("clients") or DEFAULT_CLIENTS
+    categories = cfg.get("categories") or DEFAULT_CATEGORIES
+    growth_drivers = cfg.get("growth_drivers") or DEFAULT_GROWTH_DRIVERS
+    
+    return {
+        "webapp_url": webapp_url,
+        "clients": clients,
+        "categories": categories,
+        "growth_drivers": growth_drivers,
+        "target_sheet_tab": cfg.get("target_sheet_tab", "Daily Task Log")
+    }
+
+CONFIG = load_config()
+WEBAPP_URL = CONFIG["webapp_url"]
+WHITELIST_CLIENTS = CONFIG["clients"]
+WHITELIST_CATEGORIES = CONFIG["categories"]
+WHITELIST_GROWTH_DRIVERS = CONFIG["growth_drivers"]
 
 BLACKLIST_PATTERNS = [
     "vanguard", "game", "whop", "video đó sẽ tính", "tự động tải",
@@ -378,14 +425,26 @@ def push_to_sheets(tasks):
         return {"status": "error", "message": str(e)}
 
 def main():
+    global WEBAPP_URL, WHITELIST_CLIENTS, WHITELIST_CATEGORIES, WHITELIST_GROWTH_DRIVERS
     parser = argparse.ArgumentParser(description="Generate daily task report from Codex & Antigravity logs or ChatGPT export.")
     parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD")
     parser.add_argument("--name", type=str, default=None, help="Author name")
     parser.add_argument("--role", type=str, default=None, help="Job role title")
     parser.add_argument("--chatgpt-file", type=str, default=None, help="Path to ChatGPT JSON export file")
+    parser.add_argument("--config", type=str, default=None, help="Path to custom config.json")
+    parser.add_argument("--webapp-url", type=str, default=None, help="Override Google Apps Script Web App URL")
     parser.add_argument("--format", type=str, choices=["markdown", "tsv", "json"], default="markdown")
     parser.add_argument("--push", action="store_true", help="Push rows to Google Sheet via Web App")
     args = parser.parse_args()
+    
+    if args.config or args.webapp_url:
+        cfg = load_config(args.config)
+        if args.webapp_url:
+            cfg["webapp_url"] = args.webapp_url
+        WEBAPP_URL = cfg["webapp_url"]
+        WHITELIST_CLIENTS = cfg["clients"]
+        WHITELIST_CATEGORIES = cfg["categories"]
+        WHITELIST_GROWTH_DRIVERS = cfg["growth_drivers"]
     
     date_str, start_ms, end_ms, tz_vn = get_day_bounds(args.date)
     
